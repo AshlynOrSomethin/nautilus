@@ -30,6 +30,13 @@ menu view_menu {
       action: "view.show-hidden-files";
       accel: "<control>h";
     }
+
+    item {
+      label: _("Show _Terminal");
+      action: "slot.terminal-visible";
+      accel: "F4";
+      hidden-when: "action-disabled";
+    }
   }
 
   section {

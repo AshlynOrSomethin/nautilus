@@ -127,6 +127,12 @@ gnome_autoar = dependency('gnome-autoar-0', version: '>= 0.4.4')
 gnome_desktop = dependency('gnome-desktop-4', version: '>= 43')
 gtk = dependency('gtk4', version: '>= 4.24.0')
 libadwaita = dependency('libadwaita-1', version: '>= 1.8.alpha')
+vte = dependency('vte-2.91-gtk4', version: '>= 0.70', required: get_option('terminal'))
+ptyxis_dep = disabler()
+if vte.found() and get_option('terminal-backend') == 'ptyxis'
+  ptyxis_project = subproject('ptyxis')
+  ptyxis_dep = ptyxis_project.get_variable('ptyxis_embed_dep')
+endif
 libgxdp = dependency('libgxdp')
 libportal = dependency('libportal', version: '>= 0.7')
 libportal_gtk4 = dependency('libportal-gtk4', version: '>= 0.5')
@@ -197,6 +203,8 @@ conf.set_quoted('VERSION', version_string)
 
 conf.set('HAVE_SELINUX', selinux.found())
 conf.set('HAVE_CLOUDPROVIDERS', cloudproviders.found())
+conf.set('HAVE_TERMINAL', vte.found())
+conf.set('HAVE_PTYXIS', vte.found() and get_option('terminal-backend') == 'ptyxis')
 
 conf.set('HAVE_MALLOC_TRIM', cc.has_function('malloc_trim'))
 
@@ -269,6 +277,7 @@ gnome.post_install(
 summary(
   {
     'Extensions': get_option('extensions'),
+    'Inline terminal': vte.found(),
     'Cloud providers support': cloudproviders.found(),
     'SELinux support': selinux.found(),
   },

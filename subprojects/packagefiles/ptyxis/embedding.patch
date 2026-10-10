@@ -1,0 +1,145 @@
+diff --git a/src/meson.build b/src/meson.build
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -1,6 +1,6 @@
+ ptyxis_sources = [
+   'gdkhsla.c',
+-  'main.c',
++  'ptyxis-embed.c',
+   'ptyxis-add-button-list-item.c',
+   'ptyxis-add-button-list-model.c',
+   'ptyxis-application.c',
+@@ -110,9 +110,25 @@
+   include_directories('../agent'),
+ ]
+ 
+-executable('ptyxis', ptyxis_sources + ptyxis_agent_ipc,
++executable('ptyxis', ['main.c'] + ptyxis_sources + ptyxis_agent_ipc,
+          dependencies: ptyxis_deps,
+               install: true,
+                c_args: ptyxis_c_args,
+   include_directories: ptyxis_include_directories,
+ )
++
++ptyxis_embed_library = shared_library(
++  'ptyxis-embed',
++  ptyxis_sources + ptyxis_agent_ipc,
++  dependencies: ptyxis_deps,
++  c_args: ptyxis_c_args + ['-DPTYXIS_EMBEDDED'],
++  include_directories: ptyxis_include_directories,
++  install: true,
++)
++
++ptyxis_embed_dep = declare_dependency(
++  link_with: ptyxis_embed_library,
++  dependencies: ptyxis_deps,
++  include_directories: ptyxis_include_directories,
++  sources: ptyxis_agent_ipc[1],
++)
+diff --git a/src/ptyxis-application.h b/src/ptyxis-application.h
+--- a/src/ptyxis-application.h
++++ b/src/ptyxis-application.h
+@@ -30,8 +30,9 @@
+ G_BEGIN_DECLS
+ 
+ #define PTYXIS_TYPE_APPLICATION    (ptyxis_application_get_type())
+-#define PTYXIS_APPLICATION_DEFAULT (PTYXIS_APPLICATION(g_application_get_default()))
++#define PTYXIS_APPLICATION_DEFAULT (ptyxis_embed_get_application())
+ 
+ G_DECLARE_FINAL_TYPE (PtyxisApplication, ptyxis_application, PTYXIS, APPLICATION, AdwApplication)
+ 
++PtyxisApplication *ptyxis_embed_get_application (void);
+ gint64              ptyxis_application_get_default_rlimit_nofile  (void);
+diff --git a/src/ptyxis-application.c b/src/ptyxis-application.c
+--- a/src/ptyxis-application.c
++++ b/src/ptyxis-application.c
+@@ -41,2 +41,3 @@
+ #include "ptyxis-client.h"
++#include "ptyxis-embed.h"
+ #include "ptyxis-palette.h"
+@@ -838,2 +839,2 @@
+-static void G_GNUC_NORETURN
++static void
+ ptyxis_application_client_closed_cb (PtyxisApplication *self,
+@@ -855,2 +856,10 @@
+-  exit (EXIT_SUCCESS);
++#ifdef PTYXIS_EMBEDDED
++  {
++    g_autoptr(GError) error = g_error_new_literal (G_IO_ERROR, G_IO_ERROR_CLOSED,
++                                                 "Ptyxis session agent disconnected. Restart Nautilus to reconnect.");
++    ptyxis_embed_set_error (error);
++  }
++#else
++  exit (EXIT_SUCCESS);
++#endif
+ }
+@@ -886,3 +895,5 @@
+   g_autoptr(GFile) xdg_terminals_list = NULL;
++#ifndef PTYXIS_EMBEDDED
+   AdwStyleManager *style_manager;
++#endif
+   gboolean sandbox_agent;
+@@ -893,7 +893,9 @@
+ 
+   xdg_terminals_list = g_file_new_build_filename (g_get_user_config_dir (), "xdg-terminals.list", NULL);
+ 
++#ifndef PTYXIS_EMBEDDED
+   g_application_set_default (application);
++#endif
+   g_application_set_resource_base_path (G_APPLICATION (self), "/org/gnome/Ptyxis");
+ 
+   self->exited = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+@@ -922,2 +931,7 @@
+     {
++#ifdef PTYXIS_EMBEDDED
++      ptyxis_embed_set_error (error);
++      g_clear_object (&self->client);
++      return;
++#else
+       self->client_is_fallback = TRUE;
+@@ -940,2 +954,3 @@
+         g_error ("Failed to spawn ptyxis-agent in sandbox: %s", error->message);
++#endif
+     }
+@@ -1014,7 +1032,9 @@
+ 
++#ifndef PTYXIS_EMBEDDED
+   style_manager = adw_style_manager_get_default ();
+ 
+   g_object_bind_property (self->settings, "interface-style",
+                           style_manager, "color-scheme",
+                           G_BINDING_SYNC_CREATE | G_BINDING_BIDIRECTIONAL);
++#endif
+ }
+diff --git a/src/ptyxis-client.c b/src/ptyxis-client.c
+--- a/src/ptyxis-client.c
++++ b/src/ptyxis-client.c
+@@ -342,6 +342,11 @@
+   int res;
+ 
++#ifdef PTYXIS_EMBEDDED
++  if (!in_sandbox)
++    g_subprocess_launcher_unsetenv (launcher, "GIO_MODULE_DIR");
++#endif
++
+   if (!in_sandbox &&
+       ptyxis_get_process_kind () == PTYXIS_PROCESS_KIND_FLATPAK)
+     {
+       g_ptr_array_add (argv, g_strdup ("flatpak-spawn"));
+diff --git a/src/ptyxis-tab.c b/src/ptyxis-tab.c
+--- a/src/ptyxis-tab.c
++++ b/src/ptyxis-tab.c
+@@ -522,3 +522,6 @@
+                                  ptyxis_tab_wait_cb,
+                                  g_object_ref (self));
++
++  if (self->forced_exit)
++    ptyxis_tab_force_quit (self);
+ }
+@@ -1015,4 +1015,4 @@
+ 
+-  window = PTYXIS_WINDOW (gtk_widget_get_root (widget));
+-  animating = ptyxis_window_is_animating (window);
++  window = (PtyxisWindow *)gtk_widget_get_ancestor (widget, PTYXIS_TYPE_WINDOW);
++  animating = window != NULL && ptyxis_window_is_animating (window);
+   width = gtk_widget_get_width (widget);

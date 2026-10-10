@@ -27,6 +27,10 @@
 #include "nautilus-view-info.h"
 #include "nautilus-x-content-bar.h"
 
+#ifdef HAVE_TERMINAL
+#include "nautilus-terminal.h"
+#endif
+
 #include <glib/gi18n.h>
 #include <adwaita.h>
 
@@ -75,6 +79,10 @@ struct _NautilusWindowSlot
 
     GtkWidget *stack;
     GtkWidget *vbox;
+#ifdef HAVE_TERMINAL
+    GtkPaned *terminal_paned;
+    NautilusTerminal *terminal;
+#endif
     AdwStatusPage *global_search_page;
 
     GtkWidget *extra_location_widgets;
@@ -553,6 +561,18 @@ nautilus_window_slot_handle_event (NautilusWindowSlot    *self,
     gboolean retval;
     GAction *action;
 
+#ifdef HAVE_TERMINAL
+    GtkRoot *root = gtk_widget_get_root (GTK_WIDGET (self));
+    GtkWidget *focus = root == NULL ? NULL : gtk_root_get_focus (root);
+
+    if (self->terminal != NULL && focus != NULL &&
+        (focus == GTK_WIDGET (self->terminal) ||
+         gtk_widget_is_ancestor (focus, GTK_WIDGET (self->terminal))))
+    {
+        return GDK_EVENT_PROPAGATE;
+    }
+#endif
+
     retval = FALSE;
     action = g_action_map_lookup_action (G_ACTION_MAP (self->slot_action_group),
                                          "search-visible");
@@ -847,7 +867,25 @@ nautilus_window_slot_constructed (GObject *object)
     G_OBJECT_CLASS (nautilus_window_slot_parent_class)->constructed (object);
 
     self->stack = gtk_stack_new ();
+#ifdef HAVE_TERMINAL
+    self->terminal_paned = GTK_PANED (gtk_paned_new (GTK_ORIENTATION_VERTICAL));
+    gtk_paned_set_start_child (self->terminal_paned, self->stack);
+    gtk_paned_set_resize_start_child (self->terminal_paned, TRUE);
+    gtk_paned_set_shrink_start_child (self->terminal_paned, FALSE);
+    gtk_paned_set_resize_end_child (self->terminal_paned, FALSE);
+    gtk_paned_set_shrink_end_child (self->terminal_paned, FALSE);
+    adw_bin_set_child (ADW_BIN (self), GTK_WIDGET (self->terminal_paned));
+#else
     adw_bin_set_child (ADW_BIN (self), self->stack);
+#endif
+
+    GAction *terminal_action = g_action_map_lookup_action (G_ACTION_MAP (self->slot_action_group),
+                                                          "terminal-visible");
+#ifdef HAVE_TERMINAL
+    g_simple_action_set_enabled (G_SIMPLE_ACTION (terminal_action), self->mode == NAUTILUS_MODE_BROWSE);
+#else
+    g_simple_action_set_enabled (G_SIMPLE_ACTION (terminal_action), FALSE);
+#endif
 
     self->vbox = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
     gtk_stack_add_child (GTK_STACK (self->stack), self->vbox);
@@ -1197,6 +1235,41 @@ action_unstar_current_directory (GSimpleAction *action,
                                        &(GList){ .data = self->viewed_file }, NULL, NULL, NULL);
 }
 
+static void
+action_terminal_visible (GSimpleAction *action,
+                         GVariant      *state,
+                         gpointer       user_data)
+{
+#ifdef HAVE_TERMINAL
+    NautilusWindowSlot *self = NAUTILUS_WINDOW_SLOT (user_data);
+    gboolean visible = g_variant_get_boolean (state);
+
+    if (self->terminal == NULL && visible)
+    {
+        self->terminal = NAUTILUS_TERMINAL (nautilus_terminal_new ());
+        gtk_widget_set_visible (GTK_WIDGET (self->terminal), FALSE);
+        gtk_paned_set_end_child (self->terminal_paned, GTK_WIDGET (self->terminal));
+        gtk_paned_set_position (self->terminal_paned,
+                                MAX (0, gtk_widget_get_height (GTK_WIDGET (self)) - 260));
+    }
+
+    if (self->terminal != NULL)
+    {
+        gtk_widget_set_visible (GTK_WIDGET (self->terminal), visible);
+        if (visible)
+        {
+            nautilus_terminal_set_location (self->terminal, self->location);
+            gtk_widget_grab_focus (GTK_WIDGET (self->terminal));
+        }
+        else
+        {
+            gtk_widget_grab_focus (GTK_WIDGET (self));
+        }
+    }
+    g_simple_action_set_state (action, state);
+#endif
+}
+
 const GActionEntry slot_entries[] =
 {
     { .name = "open-location", .activate = action_open_location, .parameter_type = "s" },
@@ -1221,6 +1294,7 @@ const GActionEntry slot_entries[] =
     { .name = "unbookmark-current-directory", .activate = action_unbookmark_current_directory },
     { .name = "star-current-directory", .activate = action_star_current_directory },
     { .name = "unstar-current-directory", .activate = action_unstar_current_directory },
+    { .name = "terminal-visible", .state = "false", .change_state = action_terminal_visible },
 };
 
 static void
@@ -1335,6 +1409,7 @@ nautilus_window_slot_init (NautilusWindowSlot *self)
     ADD_SHORTCUT_FOR_ACTION (self->shortcuts, "slot.search-global", "<control><shift>f");
     ADD_SHORTCUT_FOR_ACTION (self->shortcuts, "slot.reload", "F5|<ctrl>r|Refresh|Reload");
     ADD_SHORTCUT_FOR_ACTION (self->shortcuts, "slot.stop", "Stop");
+    ADD_SHORTCUT_FOR_ACTION (self->shortcuts, "slot.terminal-visible", "F4");
     ADD_SHORTCUT_FOR_ACTION (self->shortcuts, "slot.up", "<alt>Up");
     ADD_SHORTCUT_FOR_ACTION (self->shortcuts, "slot.down", "<alt>Down");
     ADD_SHORTCUT_FOR_ACTION (self->shortcuts, "slot.bookmark-current-directory", "<control>d|AddFavorite");
@@ -1542,6 +1617,13 @@ nautilus_window_slot_set_location (NautilusWindowSlot *self,
     }
 
     g_set_object (&self->location, location);
+
+#ifdef HAVE_TERMINAL
+    if (self->terminal != NULL)
+    {
+        nautilus_terminal_set_location (self->terminal, location);
+    }
+#endif
 
     nautilus_window_slot_update_title (self);
 
@@ -2531,6 +2613,14 @@ nautilus_window_slot_dispose (GObject *object)
 {
     NautilusWindowSlot *self;
     self = NAUTILUS_WINDOW_SLOT (object);
+
+#ifdef HAVE_TERMINAL
+    if (self->terminal != NULL)
+    {
+        gtk_paned_set_end_child (self->terminal_paned, NULL);
+        self->terminal = NULL;
+    }
+#endif
 
     g_signal_handlers_disconnect_by_data (nautilus_preferences, self);
 

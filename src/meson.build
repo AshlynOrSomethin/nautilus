@@ -293,6 +293,15 @@ libnautilus_sources = [
   'nautilus-x-content-bar.h',
 ]
 
+if vte.found()
+  libnautilus_sources += files('nautilus-terminal.h')
+  if get_option('terminal-backend') == 'ptyxis'
+    libnautilus_sources += files('nautilus-ptyxis-terminal.c')
+  else
+    libnautilus_sources += files('nautilus-terminal.c')
+  endif
+endif
+
 nautilus_deps = [
   cloudproviders,
   config_h,
@@ -312,6 +321,13 @@ nautilus_deps = [
   selinux,
   tinysparql,
 ]
+
+if vte.found()
+  nautilus_deps += vte
+  if get_option('terminal-backend') == 'ptyxis'
+    nautilus_deps += ptyxis_dep
+  endif
+endif
 
 libnautilus = static_library(
   'nautilus',

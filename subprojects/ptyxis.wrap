@@ -1,0 +1,6 @@
+[wrap-git]
+url = https://gitlab.gnome.org/chergert/ptyxis.git
+revision = 700abbb98647b3ea008481bbd55c602d76192f66
+depth = 1
+diff_files = ptyxis/embedding.patch
+patch_directory = ptyxis

@@ -60,6 +60,7 @@ src/nautilus-progress-info.c
 src/nautilus-progress-info-widget.c
 src/nautilus-progress-persistence-handler.c
 src/nautilus-properties.c
+src/nautilus-ptyxis-terminal.c
 src/nautilus-query-editor.c
 src/nautilus-rename-file-popover.c
 src/nautilus-search-directory-file.c
@@ -69,6 +70,7 @@ src/nautilus-shell-search-provider.c
 src/nautilus-sidebar.c
 src/nautilus-star-cell.c
 src/nautilus-tag-manager.c
+src/nautilus-terminal.c
 src/nautilus-toolbar.c
 src/nautilus-ui-utilities.c
 src/nautilus-vfs-file.c

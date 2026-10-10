@@ -18,6 +18,12 @@ tests = {
   'test-thumbnails': {},
 }
 
+if vte.found() and get_option('terminal-backend') == 'vte'
+  tests += {'test-terminal': {}}
+elif vte.found()
+  tests += {'test-ptyxis-terminal': {}}
+endif
+
 foreach test_name, extra_args : tests
   source = test_name + '.c'
   suite = ['display'] + extra_args.get('suite', [])

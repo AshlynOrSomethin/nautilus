@@ -5,6 +5,7 @@ build/
 # Ignore meson's subprojects folder
 /subprojects/*
 !/subprojects/*.wrap
+!/subprojects/packagefiles/
 
 # Ignore auto generated files
 /.buildconfig

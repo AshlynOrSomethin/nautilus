@@ -28,6 +28,19 @@ option(
 ############
 option('packagekit', type: 'boolean', deprecated: true)
 option(
+  'terminal',
+  type: 'feature',
+  value: 'auto',
+  description: 'Build the inline terminal panel',
+)
+option(
+  'terminal-backend',
+  type: 'combo',
+  choices: ['ptyxis', 'vte'],
+  value: 'ptyxis',
+  description: 'Inline terminal implementation (Ptyxis or the basic VTE panel)',
+)
+option(
   'selinux',
   type: 'feature',
   value: 'enabled',
